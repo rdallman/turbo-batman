@@ -17,16 +17,15 @@ int main(int argc, char *argv[]) {
   int sockfd,n;
   struct sockaddr_in servaddr,cliaddr;
   struct hostent *server;
-  //TODO maybe bigger?
-  char sendline[1000];
-  bzero(sendline, 1000);
+  char sendline[65025];
+  bzero(sendline, 65025);
 
   if (argc < 4) {
     printf("usage: %s server port reqID host...", argv[0]);
     exit(1);
   }
 
-  //setup socket
+  //setup socket. mmm, boilerplate
   sockfd=socket(AF_INET,SOCK_DGRAM,0);
   server = gethostbyname(argv[1]);
   if (server == NULL) 
@@ -89,6 +88,7 @@ int main(int argc, char *argv[]) {
       && attempts++ < 7);
 
   //if we got a valid response in trial 1-7
+  //  host: ip
   if (attempts < 8) {
     printf("Request %d:\n", recvline[4]);
     for (i=5, arg=4; i < n; i += 4) {
