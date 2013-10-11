@@ -12,8 +12,8 @@ class UDPHandler(SocketServer.DatagramRequestHandler):
     msg = self.request[0].strip()
     sock = self.request[1]
 
-    # TODO check if valid
-    cs = sum(map(ord, msg))
+    calc_cs = sum(map(ord, msg)) % 256
+    calc_length = len(msg)
 
     # no, I have not found a better way yet
     msg = binascii.hexlify(msg)
@@ -32,19 +32,15 @@ class UDPHandler(SocketServer.DatagramRequestHandler):
     print "Hosts to resolve: "
     print "\t\n".join(h for h in hosts)
 
-    # TODO if invalid length
-    if 0:
-      gid = struct.pack("!b", 127)
-      rid = struct.pack("!b", 127)
-    else:
-      gid = struct.pack("!b", gid)
-      rid = struct.pack("!b", rid)
+    if calc_length != tml:
+      gid = 127
+      rid = 127
 
-    reply = gid + rid
+    reply = struct.pack("!bb", gid, rid)
 
-    # TODO if invalid checksum || length
-    if 0:
+    if calc_cs != 0xFF or calc_length != tml:
       reply += struct.pack("!h", 0x0000)
+      length = ''
     else:
       for h in hosts:
         try:
@@ -53,9 +49,10 @@ class UDPHandler(SocketServer.DatagramRequestHandler):
           ip = "255.255.255.255"
         reply += socket.inet_aton(ip)
 
-    length = struct.pack("!H", (len(reply) + 3) & 0xFFFF)
+      length = struct.pack("!H", (len(reply) + 3) & 0xFFFF)
+
     # TODO cs isn't right?
-    cs = struct.pack("!B", 0xFF & sum(map(ord, length + reply)))
+    cs = struct.pack("!B", ~(sum(map(ord, length+reply)) % 256) & 0xFF)
     reply = length + cs + reply
     sock.sendto(reply, self.client_address)
 

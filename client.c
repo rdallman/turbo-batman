@@ -17,7 +17,7 @@ int main(int argc, char *argv[]) {
   int sockfd,n;
   struct sockaddr_in servaddr,cliaddr;
   struct hostent *server;
-  //maybe bigger?
+  //TODO maybe bigger?
   char sendline[1000];
   bzero(sendline, 1000);
 
@@ -26,6 +26,7 @@ int main(int argc, char *argv[]) {
     exit(1);
   }
 
+  //setup socket
   sockfd=socket(AF_INET,SOCK_DGRAM,0);
   server = gethostbyname(argv[1]);
   if (server == NULL) 
@@ -38,63 +39,64 @@ int main(int argc, char *argv[]) {
         server->h_length);
   servaddr.sin_port=htons(atoi(argv[2]));
 
-  //FIXME
-  int checksum = 0;
+  // add to each time we add a byte to reply
+  unsigned char checksum = 0;
 
-  //GID
+  //GID 1 byte
   sendline[3] = 14;
   checksum += sendline[3];
 
-  //RID 
+  //RID 1 byte
   sendline[4] = atoi(argv[3]);
   checksum += sendline[4];
 
-  //hosts
-  int arg = 4;
-  int index = 5;
-  while (arg < argc) {
-    //this may not be safe
-    int j = 0;
+  //hosts (~host~host~host...) from args
+  int arg, index, j;
+  for (index = 5, arg = 4; arg < argc; arg++) {
     sendline[index++] = '~';
     checksum += sendline[index-1];
-    while (argv[arg][j]) {
-      sendline[index++] = argv[arg][j++];
-      checksum += sendline[index-1];
+    for (j = 0; argv[arg][j]; index++, j++) {
+      sendline[index] = argv[arg][j];
+      checksum += sendline[index];
     }
-    arg++;
   }
   sendline[index] = '\0';
 
-  //TML
+  //TML 2 bytes
   sendline[0] = (index >> 8) & 0xFF;
   sendline[1] = index & 0xFF;
   checksum += sendline[0];
   checksum += sendline[1];
 
-  //TODO compute checksum correctly?
+  //Checksum 1 byte
   sendline[2] = ~checksum;
 
-  //FIXME temp for seeing what's up
-  int i = 0;
-  while (i < 5) {
-    printf("%d ", sendline[i++]);
-  }
-  while (sendline[i]) {
-    printf("%c", sendline[i++]);
-  }
-  printf("\n");
-
-  sendto(sockfd,sendline,index,0,
-      (struct sockaddr *)&servaddr,sizeof(servaddr));
-
+  //while we get corrupted response or 7 tries
+  //  send datagram, check checksum & length each time
   char recvline[index];
-  n=recvfrom(sockfd,recvline,index,0,NULL,NULL);
+  int i = 0;
+  int attempts = 0;
+  unsigned char calc_cs;
+  do {
+    sendto(sockfd,sendline,index,0,
+        (struct sockaddr *)&servaddr,sizeof(servaddr));
+    n=recvfrom(sockfd,recvline,index,0,NULL,NULL);
+    calc_cs = 0;
+    for (i=0; i < n; i++) {
+      calc_cs += recvline[i];
+    }
+  } while (((recvline[0] | recvline[1] != n) || calc_cs != 0xFF)
+      && attempts++ < 7);
 
-  //TODO only if valid
-  printf("Request %d:\n", recvline[4]);
-  for (i=5, arg=4; i < n; i += 4) {
-    printf("%s:\t %d.%d.%d.%d\n", argv[arg++],
-        0xFF & recvline[i], 0xFF & recvline[i+1], 
-        0xFF & recvline[i+2], 0xFF & recvline[i+3]);
+  //if we got a valid response in trial 1-7
+  if (attempts < 8) {
+    printf("Request %d:\n", recvline[4]);
+    for (i=5, arg=4; i < n; i += 4) {
+      printf("\t%s: %d.%d.%d.%d\n", argv[arg++],
+          0xFF & recvline[i], 0xFF & recvline[i+1], 
+          0xFF & recvline[i+2], 0xFF & recvline[i+3]);
+    }
+  } else {
+    printf("7 tries are up. Something went terribly wrong");
   }
 }
